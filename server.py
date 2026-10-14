@@ -76,6 +76,22 @@ def complete_task(task_id: str) -> dict[str, str]:
         )
     return {"id": task_id, "title": row[0], "status": "complete"}
 
+@mcp.resource("taskboard://tasks")
+def tasks_resource() -> list[dict[str, str]]:
+    """Show the current tasks on the taskboard."""
+    return list_tasks()
+
+
+@mcp.prompt()
+def plan_open_tasks(goal: str) -> str:
+    """Create a planning prompt using the current open tasks."""
+    return (
+        f"Help me make a practical plan for this goal: {goal}\n\n"
+        'Use the taskboard-mcp `list_tasks` tool with status="open" to retrieve '
+        "the current open tasks. Then order them into a practical plan and say "
+        "what to do first. Do not change any task statuses."
+    )
+
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run the taskboard MCP server")

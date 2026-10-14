@@ -5,8 +5,8 @@ A small [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server 
 ## Requirements
 
 - Python 3.11 or newer
-- Node.js and `npx` if you want to use MCP Inspector
-- An HTTPS tunnel or a deployed HTTPS endpoint if you want to connect from ChatGPT
+- Node.js and `npx` to use MCP Inspector
+- ChatGPT Desktop for a local STDIO connection, or an HTTPS tunnel/deployed endpoint for ChatGPT on the web
 
 ## Set up
 
@@ -20,15 +20,27 @@ python -m pip install -r requirements.txt
 
 On Windows, activate the environment with `.venv\Scripts\activate` instead.
 
+## MCP concepts in this server
+
+MCP servers can expose tools, resources, and prompts. They have different roles:
+
+| MCP feature | This server | Use it for |
+| --- | --- | --- |
+| Tool | `say_hello`, `add_task`, `list_tasks`, `complete_task` | An action the model can choose to call, such as listing or changing tasks. |
+| Resource | `taskboard://tasks` | Task data a client reads and can provide as context. A resource is read by the client; it is not a tool call. |
+| Prompt | `plan_open_tasks(goal)` | A reusable prompt template. The client supplies a goal and sends the resulting message to the model. The prompt itself does not call tools or change tasks. |
+
+Completed tasks are stored with status `complete`. The `list_tasks` filter uses the value `completed` for those tasks.
+
 ## Run the server
 
-For an MCP client that launches local processes, use the default stdio transport:
+For an MCP client that launches local processes, the server uses STDIO by default:
 
 ```bash
 python server.py
 ```
 
-The process waits for MCP messages on standard input; it does not display a taskboard page. Configure your client to launch the absolute path to `.venv/bin/python` with the absolute path to `server.py` as its argument. Avoid a temporary virtual environment path: if it is deleted, the client will fail with `spawn ... ENOENT`.
+The process waits for MCP messages on standard input; it does not display a taskboard page. An MCP client such as ChatGPT Desktop or MCP Inspector can launch this process for you. If configuring a client manually, use the absolute path to `.venv/bin/python` as the command and the absolute path to `server.py` as its argument. Use the virtual environment's Python so it can find the installed dependencies.
 
 For Streamable HTTP, run:
 
@@ -36,43 +48,95 @@ For Streamable HTTP, run:
 python server.py --http
 ```
 
-The MCP endpoint is `http://127.0.0.1:8000/mcp`. Keep this terminal running while a client uses the server. Opening `/mcp` directly in a browser is not a taskboard UI and may show a protocol error.
+The MCP endpoint is `http://127.0.0.1:8000/mcp`. Keep this process running while a client uses it. Opening `/mcp` directly in a browser is not a taskboard page and may show a protocol error.
 
-## Available tools
+## Read the resource from the CLI
 
-| Tool | Purpose |
-| --- | --- |
-| `say_hello(name)` | Return a greeting. |
-| `add_task(title)` | Create an open task. |
-| `list_tasks(status)` | List all tasks, or filter with `open` or `completed`. |
-| `complete_task(task_id)` | Mark a task complete using its ID. |
+`client.py` launches `server.py` over STDIO, reads `taskboard://tasks`, and prints the resource contents. Run it from the repository directory:
 
-Tasks returned by `list_tasks` use the status value `complete` for completed tasks. The filter argument is `completed`.
+```bash
+.venv/bin/python client.py
+```
 
-## Test locally with MCP Inspector
+You do not need to start the server separately for this command. On Windows, use `.venv\Scripts\python.exe client.py`.
 
-Run this from the repository directory after installing the Python dependencies:
+## Try the server with MCP Inspector
+
+Run this from the repository directory after installing the dependencies:
 
 ```bash
 npx @modelcontextprotocol/inspector@latest .venv/bin/python server.py
 ```
 
-Inspector starts the server over stdio and opens its browser interface. Select **Tools** to call `list_tasks` or the other tools. You do not need to start `python server.py` separately for this method.
+Inspector launches the server over STDIO and opens its browser interface. Use the tabs to explore each MCP feature:
 
-Alternatively, start the HTTP server with `python server.py --http`, launch Inspector with `npx @modelcontextprotocol/inspector@latest`, then connect to `http://127.0.0.1:8000/mcp` using **Streamable HTTP**.
+- **Tools:** call `list_tasks`, `add_task`, or another tool.
+- **Resources:** select `taskboard://tasks` and read it.
+- **Prompts:** select `plan_open_tasks` and enter a `goal`, such as `Prepare the demo by Friday`.
+
+Alternatively, to inspect the HTTP transport, start `python server.py --http` in one terminal and launch Inspector with `npx @modelcontextprotocol/inspector@latest` in another. In Inspector, choose **Streamable HTTP** and connect to `http://127.0.0.1:8000/mcp`.
 
 ## Connect to ChatGPT
 
-ChatGPT needs an endpoint it can reach; `127.0.0.1` on your computer is not reachable from ChatGPT. For local development, you can use an HTTPS tunnel:
+Choose the connection that matches where you use ChatGPT.
 
-1. Start the HTTP server: `python server.py --http`.
-2. In another terminal, run `ngrok http 8000` (after [installing and configuring ngrok](https://ngrok.com/docs/getting-started/)).
-3. Copy the tunnel's HTTPS address and append `/mcp`, for example `https://example.ngrok.app/mcp`.
-4. On ChatGPT web, open [Plugins](https://chatgpt.com/plugins), select **+ → Add custom MCP server**, and enter a name such as `taskboard-mcp` and the HTTPS `/mcp` URL. Choose **No authentication** for this server, review the warning, and select **Create as a plugin**.
-5. Install the new plugin. Start a new Work chat, type `@`, select the plugin, and try “Use taskboard-mcp to list my tasks.”
+### ChatGPT Desktop: local STDIO
 
-This example server does not authenticate requests. A public tunnel exposes its task tools and data to anyone who has the tunnel URL. Use it only for development, keep the URL private, and stop the tunnel when finished. For a private connection, consider [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) instead of a public URL. Account and workspace policies may affect whether custom MCP servers are available.
+ChatGPT Desktop can run a local MCP server over STDIO. In the custom MCP connection form, use:
 
-If you change tool names or descriptions, restart the server and refresh the plugin's tools in ChatGPT.
+| Field | Value |
+| --- | --- |
+| Name | `taskboard-mcp` |
+| Type | **STDIO** |
+| Command to launch | Absolute path to `.venv/bin/python` |
+| Argument | Absolute path to this repository's `server.py` |
+| Environment variables | Leave blank |
 
-These ChatGPT steps follow the [OpenAI guide to adding a custom MCP server](https://developers.openai.com/api/docs/guides/custom-mcp-server) and the [MCP server quickstart](https://developers.openai.com/plugins/build/app-quickstart).
+For example, if the repository is at `/Users/your-name/taskboard-mcp`, set the command to `/Users/your-name/taskboard-mcp/.venv/bin/python` and the argument to `/Users/your-name/taskboard-mcp/server.py`. Use the actual absolute paths on your computer. ChatGPT Desktop launches the server, so you do not need to run `python server.py` separately. Local MCP apps are available in ChatGPT Desktop, not ChatGPT on the web or mobile.
+
+Start a new chat, select or `@`-mention `taskboard-mcp`, and try:
+
+> Use the taskboard-mcp `list_tasks` tool to show my open tasks.
+
+Or add a task:
+
+> Use taskboard-mcp to add a task called “Prepare demo slides”.
+
+### ChatGPT on the web: Streamable HTTP
+
+ChatGPT on the web needs a URL it can reach. A local `127.0.0.1` address is not reachable from ChatGPT, so for local development use an HTTPS tunnel or deploy the server.
+
+1. Start the HTTP server in one terminal:
+
+   ```bash
+   source .venv/bin/activate
+   python server.py --http
+   ```
+
+2. Install and configure [ngrok](https://ngrok.com/docs/getting-started/) if needed. ngrok requires an account and an authtoken. Add your token once with:
+
+   ```bash
+   ngrok config add-authtoken YOUR_AUTHTOKEN
+   ```
+
+   Replace `YOUR_AUTHTOKEN` with the token from your ngrok dashboard. Keep it private.
+
+3. In a second terminal, start the tunnel:
+
+   ```bash
+   ngrok http 8000
+   ```
+
+4. Copy the HTTPS forwarding address ngrok prints and append `/mcp`, for example `https://your-subdomain.ngrok-free.dev/mcp`.
+
+5. In ChatGPT on the web, open **Plugins**, select **+ → Add custom MCP server**, enter a name and the HTTPS `/mcp` URL, choose **No authentication**, then create and install the connection. In some workspaces, the flow is under **Apps → Create**. Menu names and availability depend on your plan and workspace settings; see OpenAI's [custom MCP server guide](https://developers.openai.com/api/docs/guides/custom-mcp-server) and [availability details](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt). Full write support is currently available on Business, Enterprise, and Edu; Pro supports read/fetch actions.
+
+6. In a new chat, type `@`, select `taskboard-mcp`, and ask it to use a tool. For example:
+
+   > Use taskboard-mcp to list my open tasks and make a plan to prepare the demo by Friday. Do not change any task statuses.
+
+ChatGPT uses the server's tools for these requests. Whether ChatGPT exposes MCP resource reading or prompt templates in its interface depends on the client; use MCP Inspector's **Resources** and **Prompts** tabs to try `taskboard://tasks` and `plan_open_tasks(goal)` directly.
+
+The server has no authentication. A public tunnel lets anyone with its URL reach the task tools and data, including tools that add or complete tasks. Use the tunnel only for development, keep the URL private, and stop ngrok when finished. For a private connection, see [OpenAI Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels).
+
+If you change tool names or descriptions, restart the server and refresh the connected app's tools in ChatGPT.
